@@ -1,0 +1,35 @@
+name: Get Blogger Posts Simple
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  get-blogger-posts:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - run: mkdir -p data
+    
+    - name: Get Blogger posts
+      run: |
+        # Descargar posts
+        curl -s "https://www.googleapis.com/blogger/v3/blogs/${{ secrets.BLOGGER_BLOG_ID }}/posts?key=${{ secrets.BLOGGER_API_KEY }}&maxResults=20" \
+          -o data/raw-posts.json
+
+    - name: Create simple JSON
+      run: |
+        # Crear JSON simple con los datos que necesitas
+        echo '{"last_updated":"'$(date -Is)'","posts":[]}' > data/blog-posts-simple.json
+        
+        # Usar jq para procesar (forma más compatible)
+        jq '.posts = (.items[] | {title: .title, published: .published, categories: (.labels // []), url: .url, image: ("")})' data/raw-posts.json > temp.json
+        mv temp.json data/blog-posts-simple.json
+
+    - name: Commit and push
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git add data/blog-posts-simple.json
+        git commit -m "📝 Actualización posts - $(date +'%Y-%m-%d')" || echo "No changes"
+        git push
