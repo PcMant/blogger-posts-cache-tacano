@@ -20,7 +20,7 @@ jobs:
         
         # Hacer la petición y guardar el código de respuesta
         HTTP_CODE=$(curl -s -o data/raw-posts.json -w "%{http_code}" \
-          "https://www.googleapis.com/blogger/v3/blogs/${{ secrets.BLOGGER_BLOG_ID }}/posts?key=${{ secrets.BLOGGER_API_KEY }}&maxResults=10")
+          "https://www.googleapis.com/blogger/v3/blogs/${{ secrets.BLOGGER_BLOG_ID }}/posts/?key=${{ secrets.BLOGGER_API_KEY }}&maxResults=10")
         
         echo "📊 Código HTTP: $HTTP_CODE"
         
