@@ -1,36 +1,41 @@
-name: Get Blogger Posts Basic
+name: DEBUG Blogger API
 on: workflow_dispatch
 
 jobs:
-  get-posts:
+  debug-blogger:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - run: mkdir -p data
-    
-    - name: Get basic posts data
-      run: |
-        curl -s "https://www.googleapis.com/blogger/v3/blogs/$BLOG_ID/posts?key=$API_KEY&maxResults=15" \
-          | jq '{
-              last_updated: (now | strftime("%Y-%m-%dT%H:%M:%SZ")),
-              posts: [.items[] | {
-                title: .title,
-                url: .url,
-                categories: (.labels // []),
-                published: .published,
-                updated: .updated
-              }]
-            }' > data/blog-posts.json
-        
-        echo "✅ Posts obtenidos: $(jq '.posts | length' data/blog-posts.json)"
+    - name: Checkout
+      uses: actions/checkout@v4
 
-    - name: Commit
+    - name: Debug API call
       run: |
-        git config user.name "GitHub Actions"
-        git config user.email "actions@github.com"
-        git add data/blog-posts.json
-        git commit -m "📝 Posts básicos" || exit 0
-        git push
+        echo "🐛 DEBUG: Verificando qué está pasando..."
+        echo "Blog ID: $BLOG_ID"
+        echo "API Key starts with: ${API_KEY:0:10}..."
+        
+        # Hacer la petición con verbose
+        URL="https://www.googleapis.com/blogger/v3/blogs/$BLOG_ID/posts?key=$API_KEY&maxResults=3"
+        echo "URL: ${URL:0:100}..."
+        
+        curl -v "$URL" > debug.log 2>&1
+        curl -s "$URL" > response.json
+        
+        echo "=== CÓDIGO HTTP ==="
+        grep "HTTP/" debug.log || echo "No HTTP code found"
+        
+        echo "=== RESPONSE JSON ==="
+        cat response.json
+        
+        echo "=== ¿TIENE ITEMS? ==="
+        jq 'has("items")' response.json
+        
+        echo "=== NÚMERO DE ITEMS ==="
+        jq '.items | length' response.json
+        
+        echo "=== PRIMER ITEM ==="
+        jq '.items[0] | {title: .title, url: .url}' response.json
+        
       env:
         API_KEY: ${{ secrets.BLOGGER_API_KEY }}
         BLOG_ID: ${{ vars.BLOGGER_BLOG_ID }}
