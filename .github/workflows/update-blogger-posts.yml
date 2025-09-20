@@ -1,30 +1,61 @@
-name: Test API Connection
-on: workflow_dispatch
+name: Get Blogger Posts
+on:
+  workflow_dispatch:
 
 jobs:
-  test-api:
+  get-blogger-posts:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
-    - name: Test Blogger API
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Create data directory
+      run: mkdir -p data
+
+    - name: Get Blogger data
       run: |
-        echo "🔍 Probando conexión con Blogger API..."
-        echo "Blog ID: $BLOG_ID"
-        echo "API Key: ${API_KEY:0:10}..."
+        echo "📦 Obteniendo datos de Blogger..."
+        URL="https://www.googleapis.com/blogger/v3/blogs/$BLOG_ID/posts?key=$API_KEY&maxResults=10"
+        curl -s "$URL" -o data/raw-response.json
+        echo "✅ Datos obtenidos"
+
+    - name: Process data CORRECTLY
+      run: |
+        echo "🛠️ Procesando datos CORRECTAMENTE..."
         
-        # Petición simple
-        curl -s "https://www.googleapis.com/blogger/v3/blogs/$BLOG_ID/posts?key=$API_KEY&maxResults=1" > test_response.json
+        # Extraer SOLO los campos que necesitamos
+        jq '{
+          last_updated: (now | strftime("%Y-%m-%dT%H:%M:%SZ")),
+          posts: [.items[] | {
+            title: .title,
+            url: .url,
+            image: (.content | capture("<img[^>]+src=\"([^\">]+)\"") | .captures[0].string? // null),
+            categories: .labels,
+            published: .published,
+            updated: .updated
+          }]
+        }' data/raw-response.json > data/blog-posts.json
         
-        echo "=== RESPUESTA ==="
-        cat test_response.json
-        
-        echo "=== ¿FUNCIONÓ? ==="
-        if jq -e '.items' test_response.json > /dev/null; then
-          echo "✅ ¡API FUNCIONA!"
-          echo "Posts: $(jq '.items | length' test_response.json)"
-        else
-          echo "❌ API NO FUNCIONA"
-          echo "Error: $(jq '.error.message' test_response.json)"
-        fi
+        echo "✅ JSON procesado correctamente"
+        echo "📊 Posts extraídos: $(jq '.posts | length' data/blog-posts.json)"
+
+    - name: Show result
+      run: |
+        echo "🎯 Resultado final:"
+        jq '.' data/blog-posts.json
+
+    - name: Commit and push
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add data/blog-posts.json
+        git commit -m "📝 Blog posts updated - $(date +'%Y-%m-%d %H:%M')"
+        git push
       env:
         API_KEY: ${{ secrets.BLOGGER_API_KEY }}
         BLOG_ID: ${{ vars.BLOGGER_BLOG_ID }}
