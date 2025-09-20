@@ -1,90 +1,31 @@
-name: Get Blogger Posts
-on:
-  workflow_dispatch:
+name: DEBUG REAL - What's in the response?
+on: workflow_dispatch
 
 jobs:
-  get-blogger-posts:
+  debug-real:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Create data directory
-      run: mkdir -p data
-
-    - name: Get RAW Blogger data
+    - uses: actions/checkout@v4
+    
+    - name: See ACTUAL API response
       run: |
-        echo "📦 Obteniendo datos RAW..."
-        curl -s "https://www.googleapis.com/blogger/v3/blogs/$BLOG_ID/posts?key=$API_KEY&maxResults=20" \
-          -o data/RAW_BLOGGER_DATA.json
-        echo "✅ RAW data guardado"
-
-    - name: DEBUG - See what we REALLY got
-      run: |
-        echo "🔍 DEBUG: ¿Qué recibimos REALMENTE?"
-        echo "Tamaño del archivo: $(wc -c < data/RAW_BLOGGER_DATA.json) bytes"
-        echo "--- PRIMERAS 10 LÍNEAS ---"
-        head -10 data/RAW_BLOGGER_DATA.json
-        echo "--- ¿TIENE ITEMS? ---"
-        jq 'has("items")' data/RAW_BLOGGER_DATA.json
-        echo "--- NÚMERO DE ITEMS ---"
-        jq '.items | length' data/RAW_BLOGGER_DATA.json
-        echo "--- PRIMER ITEM ---"
-        jq '.items[0]' data/RAW_BLOGGER_DATA.json
-
-    - name: Process data THE RIGHT WAY
-      run: |
-        echo "🛠️ Procesando datos CORRECTAMENTE..."
+        echo "🔍 VIENDO LA RESPUESTA REAL DE LA API..."
         
-        # Método INFALIBLE
-        if jq -e '.items' data/RAW_BLOGGER_DATA.json > /dev/null; then
-          echo "🎯 EXTRAYENDO ITEMS..."
-          
-          # Paso 1: Extraer solo los campos que queremos
-          jq '.items[] | {
-            title: .title,
-            url: .url, 
-            categories: (.labels // []),
-            published: .published,
-            updated: .updated
-          }' data/RAW_BLOGGER_DATA.json > data/TEMP_ITEMS.json
-          
-          # Paso 2: Convertir a array
-          jq -s '{posts: .}' data/TEMP_ITEMS.json > data/TEMP_POSTS.json
-          
-          # Paso 3: Agregar timestamp
-          echo '{"last_updated": "'$(date -Is)'"}' > data/TEMP_TIME.json
-          
-          # Paso 4: Combinar TODO
-          jq -s '.[0] * .[1]' data/TEMP_TIME.json data/TEMP_POSTS.json > data/blog-posts.json
-          
-          # Limpiar
-          rm data/TEMP_*.json
-          
-          echo "✅ JSON creado CORRECTAMENTE"
-        else
-          echo "❌ NO HAY ITEMS en la respuesta"
-          echo '{"last_updated": "'$(date -Is)'", "posts": []}' > data/blog-posts.json
-        fi
-
-    - name: Verify final result
-      run: |
-        echo "🎯 RESULTADO FINAL:"
-        echo "Posts en JSON final: $(jq '.posts | length' data/blog-posts.json)"
-        jq '.' data/blog-posts.json
-
-    - name: Commit and push
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add data/blog-posts.json
-        git commit -m "📝 Blog posts updated - $(date +'%Y-%m-%d %H:%M')"
-        git push
+        URL="https://www.googleapis.com/blogger/v3/blogs/$BLOG_ID/posts?key=$API_KEY&maxResults=5"
+        curl -s "$URL" > real_response.json
+        
+        echo "=== ESTRUCTURA COMPLETA ==="
+        jq '.' real_response.json
+        
+        echo "=== ¿QUÉ CAMPOS TIENE? ==="
+        jq 'keys' real_response.json
+        
+        echo "=== ¿ITEMS? ==="
+        jq '.items' real_response.json
+        
+        echo "=== PRIMER ITEM COMPLETO ==="
+        jq '.items[0]' real_response.json
+        
       env:
         API_KEY: ${{ secrets.BLOGGER_API_KEY }}
         BLOG_ID: ${{ vars.BLOGGER_BLOG_ID }}
