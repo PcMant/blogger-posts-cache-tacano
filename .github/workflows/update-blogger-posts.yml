@@ -1,4 +1,4 @@
-name: Get Blogger Posts - ULTIMATE BATTLE
+name: Get Blogger Posts Simple
 on:
   workflow_dispatch:
 
@@ -9,125 +9,58 @@ jobs:
       contents: write
 
     steps:
-    # PASO 1: Checkout con TODOS los permisos
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        fetch-depth: 0
 
-    # PASO 2: Crear estructura de carpetas
-    - name: Setup directories
-      run: |
-        echo "📁 Creando estructura de carpetas..."
-        mkdir -p data
-        ls -la
+    - name: Create data directory
+      run: mkdir -p data
 
-    # PASO 3: DEBUG TOTAL - Ver qué coño recibimos
-    - name: DEBUG - See what the fuck we get
+    - name: Get Blogger data
       run: |
-        echo "🔍 DEBUG MODE: VIENDO LA RESPUESTA CRUDA..."
+        echo "📦 Obteniendo datos de Blogger..."
+        URL="https://www.googleapis.com/blogger/v3/blogs/$BLOG_ID/posts?key=$API_KEY&maxResults=20"
         
-        URL="https://www.googleapis.com/blogger/v3/blogs/$BLOG_ID/posts?key=$API_KEY&maxResults=5"
-        echo "📡 URL: ${URL:0:100}..."
-        
-        # Hacer petición con VERBOSE
-        curl -v "$URL" > debug_verbose.log 2>&1
-        curl -s "$URL" > data/raw_fucking_response.json
-        
-        echo "=== HTTP STATUS ==="
-        grep "HTTP/" debug_verbose.log || echo "No HTTP status found"
-        
-        echo "=== RAW RESPONSE (first 200 chars) ==="
-        head -c 200 data/raw_fucking_response.json
-        echo ""
-        
-        echo "=== DOES IT HAVE ITEMS? ==="
-        jq 'has("items")' data/raw_fucking_response.json || echo "jq failed"
-        
-        echo "=== ITEMS COUNT ==="
-        jq '.items | length' data/raw_fucking_response.json || echo "jq failed"
-        
-        echo "=== FIRST ITEM ==="
-        jq '.items[0]' data/raw_fucking_response.json || echo "jq failed"
+        # Hacer petición y guardar en variable
+        RESPONSE=$(curl -s "$URL")
+        echo "✅ Datos obtenidos"
 
-    # PASO 4: Procesamiento a prueba de balas
-    - name: BULLETPROOF processing
+    - name: Process and save JSON
       run: |
-        echo "💣 PROCESAMIENTO A PRUEBA DE BALAS..."
+        echo "🛠️ Procesando datos..."
         
-        # Método BRUTO pero EFECTIVO
-        if jq -e '.items' data/raw_fucking_response.json > /dev/null 2>&1; then
-          echo "🎯 HAY ITEMS - PROCESANDO..."
-          
-          # Extraer items a archivo temporal
-          jq '.items[] | {
+        # Crear JSON directamente con los datos que quieres
+        JSON_DATA=$(echo '$RESPONSE' | jq '{
+          last_updated: (now | strftime("%Y-%m-%dT%H:%M:%SZ")),
+          posts: [.items[]? | {
             title: .title,
             url: .url,
+            image: (.content | match("<img[^>]+src=\"([^\">]+)\"") | .captures[0].string? // null),
             categories: (.labels // []),
             published: .published,
             updated: .updated
-          }' data/raw_fucking_response.json > data/temp_items.json
-          
-          # Convertir a array
-          jq -s '{posts: .}' data/temp_items.json > data/temp_posts.json
-          
-          # Crear timestamp
-          echo '{"last_updated": "'$(date -Is)'"}' > data/temp_time.json
-          
-          # Combinar TODO
-          jq -s '.[0] * .[1]' data/temp_time.json data/temp_posts.json > data/blog-posts.json
-          
-          # Limpiar
-          rm data/temp_*.json
-          
-          echo "✅ JSON CREADO CON ÉXITO"
-        else
-          echo "❌ NO HAY ITEMS - CREANDO JSON VACÍO"
-          echo '{"last_updated": "'$(date -Is)'", "posts": []}' > data/blog-posts.json
-        fi
+          }]
+        }')
         
-        echo "📊 RESULTADO FINAL:"
+        # Guardar en archivo
+        echo "$JSON_DATA" > data/blog-posts.json
+        echo "✅ JSON guardado en data/blog-posts.json"
+
+    - name: Show result
+      run: |
+        echo "🎯 Resultado:"
+        echo "Posts obtenidos: $(jq '.posts | length' data/blog-posts.json)"
         jq '.' data/blog-posts.json
 
-    # PASO 5: Verificar que el archivo existe
-    - name: Verify file exists
+    - name: Commit and push
       run: |
-        echo "🔍 VERIFICANDO ARCHIVO..."
-        if [ -f "data/blog-posts.json" ]; then
-          echo "✅ data/blog-posts.json EXISTE"
-          echo "📏 Tamaño: $(wc -c < data/blog-posts.json) bytes"
-          echo "📝 Líneas: $(wc -l < data/blog-posts.json)"
-        else
-          echo "❌ EL ARCHIVO NO EXISTE"
-          exit 1
-        fi
-
-    # PASO 6: Commit con TODO el poder
-    - name: COMMIT WITH RAGE
-      run: |
-        echo "🔥 HACIENDO COMMIT CON FUERZA..."
-        
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git config --global user.name "github-actions[bot]"
-        git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        
         git add data/blog-posts.json
-        git status
-        
-        git commit -m "📝 BLOGGER POSTS - $(date +'%Y-%m-%d %H:%M')" --allow-empty
-        git push --force-with-lease
-
-    # PASO 7: Debug final
-    - name: FINAL DEBUG
-      if: always()
-      run: |
-        echo "🎯 DEBUG FINAL:"
-        echo "=== ARCHIVOS EN DATA ==="
-        ls -la data/
-        echo "=== CONTENIDO DEL JSON ==="
-        cat data/blog-posts.json || echo "No se pudo leer el JSON"
+        git commit -m "📝 Blog posts updated - $(date +'%Y-%m-%d %H:%M')"
+        git push
       env:
         API_KEY: ${{ secrets.BLOGGER_API_KEY }}
         BLOG_ID: ${{ vars.BLOGGER_BLOG_ID }}
+        RESPONSE: ${{ steps.get-blogger-data.outputs.response }}
