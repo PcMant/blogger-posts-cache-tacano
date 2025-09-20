@@ -1,35 +1,56 @@
-name: Get Blogger Posts Simple
+name: Get Blogger Posts
 on:
   schedule:
-    - cron: '0 8 * * *'
-  workflow_dispatch:
+    - cron: '0 8 * * *'  # Cada día a las 8:00 AM UTC
+  workflow_dispatch:       # Ejecución manual
 
 jobs:
   get-blogger-posts:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - run: mkdir -p data
-    
-    - name: Get Blogger posts
-      run: |
-        # Descargar posts
-        curl -s "https://www.googleapis.com/blogger/v3/blogs/${{ secrets.BLOGGER_BLOG_ID }}/posts?key=${{ secrets.BLOGGER_API_KEY }}&maxResults=20" \
-          -o data/raw-posts.json
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-    - name: Create simple JSON
+    - name: Create data directory
+      run: mkdir -p data
+
+    - name: Get Blogger posts with error handling
       run: |
-        # Crear JSON simple con los datos que necesitas
-        echo '{"last_updated":"'$(date -Is)'","posts":[]}' > data/blog-posts-simple.json
+        echo "📖 Obteniendo posts de Blogger..."
         
-        # Usar jq para procesar (forma más compatible)
-        jq '.posts = (.items[] | {title: .title, published: .published, categories: (.labels // []), url: .url, image: ("")})' data/raw-posts.json > temp.json
-        mv temp.json data/blog-posts-simple.json
+        # Hacer la petición y guardar el código de respuesta
+        HTTP_CODE=$(curl -s -o data/raw-posts.json -w "%{http_code}" \
+          "https://www.googleapis.com/blogger/v3/blogs/${{ secrets.BLOGGER_BLOG_ID }}/posts?key=${{ secrets.BLOGGER_API_KEY }}&maxResults=10")
+        
+        echo "📊 Código HTTP: $HTTP_CODE"
+        
+        # Verificar si la petición fue exitosa
+        if [ "$HTTP_CODE" -ne 200 ]; then
+          echo "❌ Error en la API: Código $HTTP_CODE"
+          echo '{"error": "API returned code '"$HTTP_CODE"'", "items": []}' > data/blog-posts.json
+          exit 0  # No fallar el workflow, pero crear JSON vacío
+        fi
+        
+        # Verificar si el JSON tiene datos
+        if ! jq -e '.items' data/raw-posts.json > /dev/null 2>&1; then
+          echo "⚠️  La API no devolvió posts o respuesta inválida"
+          echo '{"error": "No posts found or invalid response", "items": []}' > data/blog-posts.json
+        else
+          # Crear JSON simple con los datos que necesitas
+          echo '{"last_updated":"'$(date -Is)'"}' > temp.json
+          jq -s '.[0] * .[1]' temp.json data/raw-posts.json > data/blog-posts.json
+          rm temp.json
+          echo "✅ Posts obtenidos correctamente"
+        fi
+        
+        # Mostrar información de debug
+        echo "📝 Contenido del JSON:"
+        jq '.' data/blog-posts.json
 
     - name: Commit and push
       run: |
-        git config user.name "GitHub Actions"
-        git config user.email "actions@github.com"
-        git add data/blog-posts-simple.json
-        git commit -m "📝 Actualización posts - $(date +'%Y-%m-%d')" || echo "No changes"
+        git config user.name "GitHub Actions Bot"
+        git config user.email "actions@users.noreply.github.com"
+        git add data/blog-posts.json
+        git commit -m "📝 Posts actualizados - $(date +'%Y-%m-%d %H:%M')" || echo "No hay cambios"
         git push
