@@ -11,11 +11,11 @@ jobs:
     - name: Test API Access
       run: |
         echo "🔍 Probando acceso a Blogger API..."
-        echo "Blog ID: ${{ secrets.BLOGGER_BLOG_ID }}"
+        echo "Blog ID: ${{ vars.BLOGGER_BLOG_ID }}"
         echo "API Key: ${API_KEY:0:10}..."  # Primeros 10 caracteres
         
         # URL de la API
-        URL="https://www.googleapis.com/blogger/v3/blogs/${{ BLOGGER_BLOG_ID }}/posts?key=${{ secrets.BLOGGER_API_KEY }}&maxResults=10"
+        URL="https://www.googleapis.com/blogger/v3/blogs/${{ vars.BLOGGER_BLOG_ID }}/posts?key=${{ secrets.BLOGGER_API_KEY }}&maxResults=10"
         echo "URL: ${URL:0:80}..."  # Mostrar parte de la URL
         
         # Hacer petición con headers detallados
