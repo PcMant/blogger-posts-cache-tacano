@@ -5,61 +5,75 @@ on:
 jobs:
   get-blogger-posts:
     runs-on: ubuntu-latest
+    
+    # Dar permisos de escritura
+    permissions:
+      contents: write
+
     steps:
-    - name: Checkout repository
+    - name: Checkout repository WITH write access
       uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Create data directory
-      run: mkdir -p data
-
-    - name: Get raw Blogger data
+    - name: Create data directory if not exists
       run: |
-        echo "📦 Obteniendo datos brutos de Blogger..."
-        curl -s "https://www.googleapis.com/blogger/v3/blogs/$BLOG_ID/posts?key=$API_KEY&maxResults=20" \
-          -o data/raw-blogger-data.json
-        echo "✅ Datos brutos guardados"
+        echo "📁 Creando directorio data si no existe..."
+        mkdir -p data
+        echo "✅ Directorio data listo"
+
+    - name: Get Blogger data
+      run: |
+        echo "📦 Obteniendo datos de Blogger..."
+        curl -s "https://www.googleapis.com/blogger/v3/blogs/$BLOG_ID/posts?key=$API_KEY&maxResults=15" \
+          -o data/raw-data.json
+        echo "✅ Datos obtenidos y guardados en data/raw-data.json"
 
     - name: Create simple JSON structure
       run: |
-        echo "🛠️ Creando estructura simple..."
+        echo "🛠️ Creando JSON con estructura simple..."
         
-        # Crear un JSON básico con los datos que necesitamos
-        echo '{
-          "last_updated": "'$(date -Is)'",
-          "posts": []
-        }' > data/blog-posts.json
-        
-        # Verificar si hay posts
-        if jq -e '.items' data/raw-blogger-data.json > /dev/null; then
-          # Extraer solo los datos que necesitamos
-          jq '.items[] | {
-            title: .title,
-            url: .url,
-            categories: (.labels // []),
-            published: .published,
-            updated: .updated
-          }' data/raw-blogger-data.json > data/temp-posts.json
+        # Verificar si el archivo raw tiene datos
+        if jq -e '.items' data/raw-data.json > /dev/null; then
+          echo "📊 Procesando $(jq '.items | length' data/raw-data.json) posts..."
           
-          # Convertir a array y agregar al JSON principal
-          jq -s '.posts = $posts' --argjson posts "$(cat data/temp-posts.json | jq -s '.')" data/blog-posts.json > data/final.json
-          mv data/final.json data/blog-posts.json
-          rm data/temp-posts.json
+          # Crear el JSON final con los datos que necesitas
+          jq '{
+            last_updated: (now | strftime("%Y-%m-%dT%H:%M:%SZ")),
+            posts: [.items[] | {
+              title: .title,
+              url: .url,
+              categories: (.labels // []),
+              published: .published,
+              updated: .updated
+            }]
+          }' data/raw-data.json > data/blog-posts.json
+          
+          echo "✅ JSON creado en data/blog-posts.json"
+          echo "📝 Número de posts procesados: $(jq '.posts | length' data/blog-posts.json)"
+        else
+          echo "⚠️ No se encontraron posts, creando JSON vacío..."
+          echo '{"last_updated": "'$(date -Is)'", "posts": []}' > data/blog-posts.json
         fi
-        
-        echo "✅ Estructura simple creada"
 
-    - name: Show results
+    - name: Verify file was created
       run: |
-        echo "📊 Resultado final:"
-        jq '.' data/blog-posts.json
-        echo "Número de posts: $(jq '.posts | length' data/blog-posts.json)"
+        echo "🔍 Verificando que el archivo existe..."
+        if [ -f "data/blog-posts.json" ]; then
+          echo "✅ data/blog-posts.json existe"
+          echo "📏 Tamaño: $(wc -l < data/blog-posts.json) líneas"
+        else
+          echo "❌ El archivo no se creó"
+          exit 1
+        fi
 
-    - name: Commit and push
+    - name: Commit and push changes
       run: |
-        git config user.name "GitHub Actions Bot"
-        git config user.email "actions@users.noreply.github.com"
+        echo "📤 Haciendo commit y push..."
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
         git add data/blog-posts.json
-        git commit -m "📝 Posts actualizados - $(date +'%Y-%m-%d %H:%M')" || echo "No changes to commit"
+        git commit -m "📝 Auto-update blog posts - $(date +'%Y-%m-%d %H:%M')" || echo "⚠️ No hay cambios que commitear"
         git push
       env:
         API_KEY: ${{ secrets.BLOGGER_API_KEY }}
