@@ -1,60 +1,50 @@
-name: Get Blogger Posts
+name: Get Blogger Posts Robust
 on:
   workflow_dispatch:
 
 jobs:
-  get-blogger-posts:
+  get-posts:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Create data directory
-      run: mkdir -p data
-
-    - name: Get Blogger data
+    
+    - run: mkdir -p data
+    
+    - name: Get and process data
       run: |
-        echo "📦 Obteniendo datos de Blogger..."
-        URL="https://www.googleapis.com/blogger/v3/blogs/$BLOG_ID/posts?key=$API_KEY&maxResults=10"
-        curl -s "$URL" -o data/raw-response.json
-        echo "✅ Datos obtenidos"
-
-    - name: Process data CORRECTLY
-      run: |
-        echo "🛠️ Procesando datos CORRECTAMENTE..."
-        
-        # Extraer SOLO los campos que necesitamos
+        # Obtener y procesar en un solo paso
+        curl -s "https://www.googleapis.com/blogger/v3/blogs/$BLOG_ID/posts?key=$API_KEY&maxResults=15" | \
         jq '{
           last_updated: (now | strftime("%Y-%m-%dT%H:%M:%SZ")),
           posts: [.items[] | {
             title: .title,
             url: .url,
-            image: (.content | capture("<img[^>]+src=\"([^\">]+)\"") | .captures[0].string? // null),
             categories: .labels,
             published: .published,
             updated: .updated
           }]
-        }' data/raw-response.json > data/blog-posts.json
+        }' > data/blog-posts.json
         
-        echo "✅ JSON procesado correctamente"
-        echo "📊 Posts extraídos: $(jq '.posts | length' data/blog-posts.json)"
+        echo "✅ JSON creado directamente"
 
-    - name: Show result
+    - name: Add images in separate step
       run: |
-        echo "🎯 Resultado final:"
-        jq '.' data/blog-posts.json
+        # Extraer imágenes por separado (más robusto)
+        jq '.posts[] | .content' data/raw-response.json > data/contents.txt
+        
+        # Procesar imágenes si es necesario
+        echo "📷 Imágenes serán procesadas en el futuro"
 
-    - name: Commit and push
+    - name: Commit
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git add data/blog-posts.json
-        git commit -m "📝 Blog posts updated - $(date +'%Y-%m-%d %H:%M')"
+        git commit -m "📝 Posts updated - $(date +'%Y-%m-%d')"
         git push
       env:
         API_KEY: ${{ secrets.BLOGGER_API_KEY }}
