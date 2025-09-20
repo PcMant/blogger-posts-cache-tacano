@@ -1,74 +1,80 @@
-name: Get Blogger Posts MANUAL
+name: Get Blogger Posts
 on:
   workflow_dispatch:
 
 jobs:
-  get-posts:
+  get-blogger-posts:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-    
-    - run: mkdir -p data
-    
-    - name: Get data and process MANUALLY
-      run: |
-        # Obtener datos
-        curl -s "https://www.googleapis.com/blogger/v3/blogs/$BLOG_ID/posts?key=$API_KEY&maxResults=10" \
-          -o data/raw.json
-        
-        # VER qué tenemos realmente
-        echo "🔍 ¿Qué hay en la respuesta?"
-        jq '.' data/raw.json | head -30
-        
-        # Crear JSON manualmente PASO A PASO
-        echo "🛠️ Creando JSON manualmente..."
-        
-        # 1. Crear array vacío
-        echo '[]' > data/temp_array.json
-        
-        # 2. Procesar CADA item manualmente
-        ITEM_COUNT=$(jq '.items | length' data/raw.json)
-        echo "Encontrados $ITEM_COUNT items"
-        
-        for i in $(seq 0 $(($ITEM_COUNT - 1))); do
-          TITLE=$(jq -r ".items[$i].title" data/raw.json)
-          URL=$(jq -r ".items[$i].url" data/raw.json)
-          LABELS=$(jq -r ".items[$i].labels // []" data/raw.json)
-          PUBLISHED=$(jq -r ".items[$i].published" data/raw.json)
-          
-          echo "Procesando: $TITLE"
-          
-          # Agregar al array
-          jq --arg title "$TITLE" \
-             --arg url "$URL" \
-             --argjson labels "$LABELS" \
-             --arg published "$PUBLISHED" \
-            '. += [{
-              title: $title,
-              url: $url,
-              categories: $labels,
-              published: $published
-            }]' data/temp_array.json > data/temp_updated.json
-          mv data/temp_updated.json data/temp_array.json
-        done
-        
-        # 3. Crear JSON final
-        echo '{"last_updated": "'$(date -Is)'"}' > data/temp_time.json
-        jq --argjson posts "$(cat data/temp_array.json)" '.posts = $posts' data/temp_time.json > data/blog-posts.json
-        
-        echo "✅ JSON creado manualmente"
-        echo "Posts: $(jq '.posts | length' data/blog-posts.json)"
 
-    - name: Commit
+    - name: Create data directory
+      run: mkdir -p data
+
+    - name: Get Blogger data
+      run: |
+        echo "📦 Obteniendo datos de Blogger..."
+        curl -s "https://www.googleapis.com/blogger/v3/blogs/$BLOG_ID/posts?key=$API_KEY&maxResults=20" \
+          -o data/raw_response.json
+        echo "✅ Datos guardados"
+
+    - name: DEBUG - See what we got
+      run: |
+        echo "🔍 VIENDO lo que recibimos:"
+        echo "Tamaño del archivo: $(wc -c < data/raw_response.json) bytes"
+        echo "¿Tiene 'items'? $(jq 'has("items")' data/raw_response.json)"
+        echo "Número de items: $(jq '.items | length' data/raw_response.json)"
+        echo "--- PRIMER ITEM ---"
+        jq '.items[0] | {title: .title, url: .url}' data/raw_response.json
+
+    - name: Process data THE RIGHT WAY
+      run: |
+        echo "🛠️ Procesando datos CORRECTAMENTE..."
+        
+        # Método INFALIBLE - sin pipes complejos
+        # 1. Crear archivo con timestamp
+        echo '{"last_updated": "'$(date -Is)'"}' > data/blog-posts.json
+        
+        # 2. Extraer items y agregarlos al JSON
+        if jq -e '.items' data/raw_response.json > /dev/null; then
+          jq '.items | map({
+            title: .title,
+            url: .url,
+            categories: (.labels // []),
+            published: .published,
+            updated: .updated
+          })' data/raw_response.json > data/items_array.json
+          
+          # 3. Combinar con el timestamp
+          jq --slurpfile items data/items_array.json '.posts = $items[0]' data/blog-posts.json > data/final.json
+          mv data/final.json data/blog-posts.json
+          rm data/items_array.json
+        else
+          # Si no hay items, agregar array vacío
+          jq '.posts = []' data/blog-posts.json > data/final.json
+          mv data/final.json data/blog-posts.json
+        fi
+        
+        echo "✅ Procesamiento completado"
+
+    - name: Verify result
+      run: |
+        echo "🎯 RESULTADO FINAL:"
+        echo "Número de posts: $(jq '.posts | length' data/blog-posts.json)"
+        jq '.' data/blog-posts.json
+
+    - name: Commit and push
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git add data/blog-posts.json
-        git commit -m "📝 Posts manual process"
+        git commit -m "📝 Blog posts updated - $(date +'%Y-%m-%d %H:%M')"
         git push
       env:
         API_KEY: ${{ secrets.BLOGGER_API_KEY }}
