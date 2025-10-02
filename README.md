@@ -43,7 +43,7 @@ De esta forma no tengo que consultar la API de Google cada vez que quiera mostra
 
 - [GitHub Actions](https://docs.github.com/en/actions) → para automatizar la tarea.
 - [Node.js](https://nodejs.org/) → para procesar la respuesta de la API.
-- [Blogger API v3](https://developers.google.com/blogger/docs/3.0) → para obtener los posts.
+- [Blogger API v3](https://developers.google.com/blogger) → para obtener los posts.
 
 ---
 
